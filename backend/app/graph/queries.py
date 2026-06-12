@@ -106,3 +106,57 @@ def graph_stats() -> dict:
         """).single()
         return dict(counts) if counts is not None else {}
 
+
+
+def function_git_history(function_name: str) -> list[dict]:
+    query = """
+    MATCH (f:Function {name: $name})
+    RETURN f.name AS name,
+           f.file_path AS file_path,
+           f.change_count AS change_count,
+           f.last_author AS last_author,
+           f.last_changed AS last_changed,
+           f.first_seen AS first_seen,
+           f.last_commit_msg AS last_commit_msg,
+           f.primary_category AS category,
+           f.authors AS authors,
+           f.total_authors AS total_authors
+    """
+
+    with get_driver().session() as session:
+        result = session.run(query, name=function_name)
+        return [dict(r) for r in result]
+    
+
+def most_changed_functions(limit: int = 10) -> list[dict]:
+    query = """
+    MATCH (f:Function)
+    WHERE f.change_count IS NOT NULL
+    RETURN f.name AS name,
+           f.file_path AS file_path,
+           f.change_count AS change_count,
+           f.primary_category AS category,
+           f.total_authors AS total_authors
+    ORDER BY f.change_count DESC
+    LIMIT $limit
+    """
+
+    with get_driver().session() as session:
+        result = session.run(query, limit=limit)
+        return [dict(r) for r in result]
+    
+
+def functions_by_category(category: str) -> list[dict]:
+    query = """
+    MATCH (f:Function {primary_category: $category})
+    RETURN f.name AS name,
+           f.file_path AS file_path,
+           f.change_count AS change_count,
+           f.last_author AS last_author
+    ORDER BY f.change_count DESC
+    LIMIT 50 
+    """
+
+    with get_driver().session() as session:
+        result = session.run(query, category=category)
+        return [dict(r) for r in result]

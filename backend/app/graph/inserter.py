@@ -131,3 +131,52 @@ def store_graph(parse_results: list[ParseResult], graph: DependencyGraph):
         "functions": graph.total_functions,
         "edges": graph.total_edges,
     }
+
+
+def enrich_functions_with_git_data(provenance_list: list) -> int:
+    """
+    Update existing Function nodes in Neo4j with git history data.
+    Returns number of functions enriched.
+    """
+
+    from ..git.archaeologist import FunctionProvenance
+
+    query = """
+    UNWIND $batch AS row
+    MATCH (fn:Function {id: row.function_id})
+    SET fn.change_count = row.change_count,
+        fn.last_author = row.last_author,
+        fn.last_changed = row.last_changed,
+        fn.first_seen = row.first_seen,
+        fn.last_commit_msg = row.last_commit_msg,
+        fn.primary_category = row.primary_category,
+        fn.authors = row.authors,
+        fn.total_authors = row.total_authors
+    """
+    batch = [
+        {
+            "function_id" : p.function_id,
+            "change_count": p.change_count,
+            "last_author": p.last_author,
+            "last_changed": p.last_changed,
+            "first_seen": p.first_seen,
+            "last_commit_msg": p.last_commit_msg,
+            "primary_category": p.primary_category,
+            "authors": p.authors[:10],
+            "total_authors": len(p.authors),
+        }
+
+        for p in provenance_list
+        if p.change_count > 0
+    ]
+
+    if not batch:
+        return 0
+    
+    driver = get_driver()
+    with driver.session() as session:
+        for i in range(0, len(batch), BATCH_SIZE):
+            _run_batch(session, query, batch[i:i + BATCH_SIZE])
+
+    print(f"Enriched {len(batch)} functions with git data")
+    return len(batch)

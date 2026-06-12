@@ -17,6 +17,13 @@ from ..graph.queries import (
     graph_stats,
     what_imports_module,
 )
+from ..git.archaeologist import mine_repo_history
+from ..graph.inserter import enrich_functions_with_git_data
+from ..graph.queries import (
+    function_git_history,
+    most_changed_functions,
+    functions_by_category,
+)
 
 router = APIRouter()
 
@@ -189,3 +196,39 @@ async def get_most_called(limit: int = 10):
 @router.get("/graph/imports/{module_name}")
 async def get_imports(module_name: str):
     return {"module": module_name, "imported_by": what_imports_module(module_name)}
+
+
+@router.post("/git/enrich")
+async def enrich_with_git(req: IngestGithubRequest):
+    with tempfile.TemporaryDirectory() as tmp:
+        clone = subprocess.run(
+            ["git", "clone", "--depth=200", req.github_url, tmp],
+            capture_output=True,
+            timeout=120,   
+        )
+        if clone.returncode != 0:
+            raise HTTPException(status_code=400, detail="Clone failed.")
+        
+        parse_results = await walk_repo(tmp)
+        provenance = mine_repo_history(tmp, parse_results)
+
+    enriched = enrich_functions_with_git_data(provenance)
+    return {
+        "status": "enriched",
+        "functions_enriched": enriched,
+        "total_provenance_records": len(provenance),
+    }
+
+
+@router.get("/graph/most-changed")
+async def get_most_changed(limit: int = 10):
+    return {"functions": most_changed_functions(limit)}
+
+
+@router.get("/graph/function/{name}/history")
+async def get_function_history(name: str):
+    return {"function": name, "history": function_git_history(name)}
+
+@router.get("/graph/category/{category}")
+async def get_by_category(category: str):
+    return {"category": category, "functions": functions_by_category(category)}
