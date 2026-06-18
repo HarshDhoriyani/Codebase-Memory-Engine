@@ -24,6 +24,12 @@ from ..graph.queries import (
     most_changed_functions,
     functions_by_category,
 )
+from ..embedder.embedder import embed_functions, embed_query
+from ..embedder.qdrant_store import (
+    upsert_functions,
+    semantic_search,
+    collection_stats,
+)
 
 router = APIRouter()
 
@@ -232,3 +238,56 @@ async def get_function_history(name: str):
 @router.get("/graph/category/{category}")
 async def get_by_category(category: str):
     return {"category": category, "functions": functions_by_category(category)}
+
+class SearchRequest(BaseModel):
+    query: str
+    limit: int = 10
+    language: str = None
+    min_score: float = 0.3
+
+@router.post("/search/embed")
+async def embed_repo(req: IngestGithubRequest):
+    """
+    Clone repo, parse all files, embed every function,
+    store vectors in Qdrant.
+    First run downloads the model (~23MB) - takes 1-2 mins.
+    Subsequent runs are fast.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        clone = subprocess.run(
+            ["git", "clone", "--depth=1", req.github_url, tmp],
+            capture_output=True,
+            timeout=60,
+        )
+        if clone.returncode != 0:
+            raise HTTPException(status_code=400, detail="Clone failed.")
+        parse_results = await walk_repo(tmp)
+
+    embedded = embed_functions(parse_results)
+    stored = upsert_functions(embedded)
+
+    return {
+        "status": "embedded",
+        "functions_stored": stored,
+        "total_files": len(parse_results),
+    }
+
+@router.post("/search/semantic")
+async def search_semantic(req: SearchRequest):
+    query_vector = embed_query(req.query)
+    results = semantic_search(
+        query_vector=query_vector,
+        limit=req.limit,
+        language_filter=req.language,
+        min_score=req.min_score,
+    )
+    return {
+        "query": req.query,
+        "results": results,
+        "count": len(results),
+    }
+
+
+@router.get("/search/stats")
+async def get_search_stats():
+    return collection_stats()

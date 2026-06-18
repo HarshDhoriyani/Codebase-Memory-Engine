@@ -33,7 +33,7 @@ Point it at the FastAPI repo itself:
 ```bash
 # 1. ingest the repo
 POST /api/v1/graph/store
-{ "github_url": "https://github.com/tiangolo/fastapi" }
+{ "github_url": "https://github.com/fastapi/fastapi" }
 
 # result: 1,124 files · 4,590 functions · 3,800+ call edges indexed in ~60s
 
@@ -160,7 +160,7 @@ codebase-memory-engine/
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/codebase-memory-engine
+git clone https://github.com/HarshDhoriyani/codebase-memory-engine
 cd codebase-memory-engine
 ```
 
@@ -249,7 +249,7 @@ http://localhost:7474         ← Neo4j browser (neo4j / password123)
 ```bash
 # Windows PowerShell
 $base = "http://localhost:8000/api/v1"
-$repo = '{"github_url": "https://github.com/tiangolo/fastapi"}'
+$repo = '{"github_url": "https://github.com/fastapi/fastapi"}'
 
 # 1. parse + store graph
 Invoke-RestMethod -Method POST -Uri "$base/graph/store" -ContentType "application/json" -Body $repo

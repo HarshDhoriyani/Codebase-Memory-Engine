@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .api.routes import router
 from .graph.schema import setup_schema
-from .graph.client import is_connected
+from .graph.client import is_connected as neo4j_connected
+from .embedder.qdrant_store import setup_collection, is_connected as qdrant_connected
 
 app = FastAPI(title="Codebase Memory Engine", version="0.1.0")
 
@@ -17,16 +18,23 @@ app.include_router(router, prefix="/api/v1")
 
 @app.on_event("startup")
 async def startup():
-    if is_connected():
+    if neo4j_connected():
         setup_schema()
-        print("Neo4j Connected")
+        print("Neo4j connected")
     else:
-        print("Neo4j Not Available - graph features disabled")
+        print("Neo4j not available")
+
+    if qdrant_connected():
+        setup_collection()
+        print("Qdrant Connected")
+    else:
+        print("Qdrant Not Available")
 
 
 @app.get("/")
 async def health():
     return {
         "status": "ok",
-        "neo4j": is_connected(),
+        "neo4j": neo4j_connected(),
+        "qdrant": qdrant_connected(),
     }
