@@ -30,6 +30,7 @@ from ..embedder.qdrant_store import (
     semantic_search,
     collection_stats,
 )
+from ..orchestrator.orchestrator import process_query
 
 router = APIRouter()
 
@@ -291,3 +292,49 @@ async def search_semantic(req: SearchRequest):
 @router.get("/search/stats")
 async def get_search_stats():
     return collection_stats()
+
+# ── week 6 endpoints ──────────────────────────────────────
+
+class QueryRequest(BaseModel):
+    query: str
+
+
+@router.post("/query")
+async def query_codebase(req: QueryRequest):
+    """
+    Main query endpoint — classifies intent, queries the right
+    stores, and returns fused context ready for the LLM.
+
+    Example queries:
+      - "What does the routing module call?"
+      - "Find functions that handle authentication"
+      - "Why has __init__ changed so many times?"
+      - "What calls add_api_route and how complex is it?"
+    """
+    result = await process_query(req.query)
+    return {
+        "query":         result.query,
+        "intent":        result.intent_type,
+        "confidence":    result.intent_conf,
+        "function_name": result.function_name,
+        "context":       result.context,
+        "graph_data":    result.graph_data,
+        "vector_results": result.vector_data,
+        "errors":        result.errors,
+    }
+
+
+@router.post("/query/classify")
+async def classify_query(req: QueryRequest):
+    """
+    Debug endpoint — just classify the intent without running queries.
+    Useful for testing the classifier.
+    """
+    from ..orchestrator.classifier import classify
+    intent = classify(req.query)
+    return {
+        "query":         req.query,
+        "intent_type":   intent.type.value,
+        "confidence":    round(intent.confidence, 2),
+        "function_name": intent.function_name,
+    }

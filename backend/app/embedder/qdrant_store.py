@@ -132,6 +132,7 @@ def is_connected() -> bool:
     try:
         get_qdrant().get_collections()
         return True
-    except Exception:
+    except Exception as e:
+        print(f"Qdrant not available: {e}")
         return False
     
