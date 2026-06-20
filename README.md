@@ -320,15 +320,15 @@ Current test coverage: **22 tests, all passing**
 
 ## Build Progress
 
-| Week | Feature | Status |
+| Steps | Feature | Status |
 |------|---------|--------|
 | 1 | AST parser — tree-sitter, function extraction | ✅ Done |
 | 2 | Call graph + import graph + cycle detection | ✅ Done |
 | 3 | Neo4j graph DB — store nodes, edges, schema | ✅ Done |
 | 4 | Git archaeologist — commit history per function | ✅ Done |
 | 5 | Semantic embeddings — Qdrant + fastembed | ✅ Done |
-| 6 | Query orchestrator — intent routing + context fusion | 🔨 Building |
-| 7 | LLM explainer — Claude API + streaming + citations | ⬜ Planned |
+| 6 | Query orchestrator — intent routing + context fusion | ✅ Done |
+| 7 | LLM explainer — Claude API + streaming + citations | ✅ Done |
 | 8 | Next.js frontend — chat UI + graph visualiser | ⬜ Planned |
 | 9 | GitHub integration — webhooks + incremental updates | ⬜ Planned |
 | 10 | Deploy — Docker + CI/CD + Vercel + Fly.io | ⬜ Planned |
