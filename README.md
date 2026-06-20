@@ -360,6 +360,7 @@ NEO4J_PASSWORD=password123
 QDRANT_HOST=qdrant
 QDRANT_PORT=6333
 REDIS_URL=redis://redis:6379
+GROQ_API_KEY=
 ```
 
 All values are local Docker defaults — no external accounts needed for development.
