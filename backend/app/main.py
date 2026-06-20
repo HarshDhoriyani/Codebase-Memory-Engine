@@ -4,6 +4,7 @@ from .api.routes import router
 from .graph.schema import setup_schema
 from .graph.client import is_connected as neo4j_connected
 from .embedder.qdrant_store import setup_collection, is_connected as qdrant_connected
+from .explainer.explainer import is_available
 
 app = FastAPI(title="Codebase Memory Engine", version="0.1.0")
 
@@ -30,6 +31,11 @@ async def startup():
     else:
         print("Qdrant Not Available")
 
+    if is_available():
+        print("Groq API key found")
+    else:
+        print("GROQ_API_KEY not set - /explain endpoints disabled")
+
 
 @app.get("/")
 async def health():
@@ -37,4 +43,5 @@ async def health():
         "status": "ok",
         "neo4j": neo4j_connected(),
         "qdrant": qdrant_connected(),
+        "groq": is_available(),
     }

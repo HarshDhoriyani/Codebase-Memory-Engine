@@ -31,6 +31,12 @@ from ..embedder.qdrant_store import (
     collection_stats,
 )
 from ..orchestrator.orchestrator import process_query
+from fastapi.responses import StreamingResponse
+from ..explainer.explainer import (
+    stream_explanation,
+    get_explanation,
+    is_available,
+)
 
 router = APIRouter()
 
@@ -243,7 +249,7 @@ async def get_by_category(category: str):
 class SearchRequest(BaseModel):
     query: str
     limit: int = 10
-    language: str = None
+    language: str = None # type: ignore
     min_score: float = 0.3
 
 @router.post("/search/embed")
@@ -337,4 +343,79 @@ async def classify_query(req: QueryRequest):
         "intent_type":   intent.type.value,
         "confidence":    round(intent.confidence, 2),
         "function_name": intent.function_name,
+    }
+
+
+# ── week 7 endpoints ──────────────────────────────────────
+
+@router.post("/explain")
+async def explain_query(req: QueryRequest):
+    """
+    Full pipeline: classify → query stores → fuse context → stream Claude answer.
+
+    Returns a Server-Sent Events stream.
+    Each event is a chunk of the explanation as it's generated.
+
+    Use this endpoint from your frontend to stream answers.
+    """
+    if not is_available():
+        return {"error": "ANTHROPIC_API_KEY not set in .env"}
+
+    # run orchestrator to get context
+    result = await process_query(req.query)
+
+    async def event_stream():
+        # first send metadata so frontend knows intent + sources
+        import json
+        meta = json.dumps({
+            "type":     "meta",
+            "intent":   result.intent_type,
+            "confidence": result.intent_conf,
+            "function": result.function_name,
+        })
+        yield f"data: {meta}\n\n"
+
+        # then stream the explanation
+        async for chunk in stream_explanation(
+            context=result.context,
+            intent_type=result.intent_type,
+        ):
+            payload = json.dumps({"type": "chunk", "text": chunk})
+            yield f"data: {payload}\n\n"
+
+        # send done signal
+        yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control":               "no-cache",
+            "X-Accel-Buffering":           "no",
+            "Access-Control-Allow-Origin": "*",
+        },
+    )
+
+
+@router.post("/explain/full")
+async def explain_query_full(req: QueryRequest):
+    """
+    Non-streaming version of /explain.
+    Returns the full answer at once — easier to test in Swagger/PowerShell.
+    """
+    if not is_available():
+        return {"error": "ANTHROPIC_API_KEY not set in .env"}
+
+    result = await process_query(req.query)
+    answer = await get_explanation(
+        context=result.context,
+        intent_type=result.intent_type,
+    )
+
+    return {
+        "query":        result.query,
+        "intent":       result.intent_type,
+        "function":     result.function_name,
+        "answer":       answer,
+        "context_used": result.context,
     }
