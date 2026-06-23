@@ -1,15 +1,16 @@
 "use client";
 import { useState } from "react";
 import { Github, Loader2, CheckCircle } from "lucide-react";
-import { ingestRepo, embedRepo } from "@/lib/api";
+import { ingestFull } from "@/lib/api";
 
 interface Props {
   onClose: () => void;
+  onIndexed: (repo: string) => void;
 }
 
 type Step = "idle" | "ingesting" | "embedding" | "done" | "error";
 
-export default function OnboardingModal({ onClose }: Props) {
+export default function OnboardingModal({ onClose, onIndexed }: Props) {
   const [url,     setUrl]     = useState("https://github.com/tiangolo/fastapi");
   const [step,    setStep]    = useState<Step>("idle");
   const [message, setMessage] = useState("");
@@ -17,22 +18,23 @@ export default function OnboardingModal({ onClose }: Props) {
   async function handleIndex() {
     if (!url.trim()) return;
     setStep("ingesting");
-    setMessage("Cloning + parsing files...");
+    setMessage("Clearing old data + cloning repo...");
 
     try {
-      const ingestResult = await ingestRepo(url);
-      setMessage(`Parsed ${ingestResult.total_functions || 0} functions. Embedding...`);
-      setStep("embedding");
+      setMessage("Parsing files, building graph, embedding functions...");
+      const result = await ingestFull(url);
 
-      await embedRepo(url);
       setStep("done");
-      setMessage("Repo indexed and ready to query.");
+      onIndexed(url);   // ← tell parent which repo was indexed
+      setMessage(
+        `Done. ${result.total_functions} functions · ${result.total_edges} edges · ${result.vectors_stored} vectors`
+      );
     } catch (err) {
       setStep("error");
       setMessage(String(err));
     }
   }
-
+  
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
       <div className="bg-[var(--bg-card)] border border-[var(--border)] rounded-2xl p-6 w-full max-w-md">
@@ -69,20 +71,6 @@ export default function OnboardingModal({ onClose }: Props) {
                 <Loader2 size={16} className="text-brand-500 animate-spin" />
               )}
               <p className="text-sm text-[var(--text-primary)]">{message}</p>
-            </div>
-
-            {/* steps */}
-            <div className="mt-3 flex gap-2">
-              {["ingesting", "embedding", "done"].map((s, i) => (
-                <div
-                  key={s}
-                  className={`flex-1 h-1 rounded-full transition-colors ${
-                    ["ingesting", "embedding", "done"].indexOf(step) >= i
-                      ? "bg-brand-500"
-                      : "bg-[var(--border)]"
-                  }`}
-                />
-              ))}
             </div>
           </div>
         )}

@@ -11,6 +11,7 @@ export default function Home() {
   const [lastIntent,     setLastIntent]     = useState("");
   const [activeTab,      setActiveTab]      = useState<"graph" | "stats">("graph");
   const [clickedNode,    setClickedNode]    = useState<string | null>(null);
+  const [currentRepo, setCurrentRepo]       = useState<string>("");
 
   return (
     <div className="flex flex-col h-screen bg-[var(--bg-primary)]">
@@ -30,6 +31,13 @@ export default function Home() {
             </p>
           </div>
         </div>
+
+        {currentRepo && (
+          <span className="text-xs text-[var(--text-muted)] font-mono truncate max-w-[200px] hidden sm:block">
+            📦 {currentRepo.replace("https://github.com/", "")}
+          </span>
+        )}
+        
         <button
           onClick={() => setShowOnboarding(true)}
           className="flex items-center gap-2 px-3 py-1.5 bg-brand-600 hover:bg-brand-500 rounded-lg text-xs text-white font-medium transition-colors"
@@ -106,7 +114,10 @@ export default function Home() {
       </div>
 
       {showOnboarding && (
-        <OnboardingModal onClose={() => setShowOnboarding(false)} />
+        <OnboardingModal
+          onClose={() => setShowOnboarding(false)}
+          onIndexed={(repo) => setCurrentRepo(repo)}
+        />
       )}
     </div>
   );

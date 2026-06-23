@@ -1,6 +1,9 @@
 import tempfile
 import subprocess
 import aiofiles
+from ..graph.schema import clear_graph
+from ..embedder.qdrant_store import get_qdrant, COLLECTION_NAME
+from qdrant_client.models import Distance, VectorParams
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -418,4 +421,64 @@ async def explain_query_full(req: QueryRequest):
         "function":     result.function_name,
         "answer":       answer,
         "context_used": result.context,
+    }
+
+@router.post("/ingest/full")
+async def ingest_full(req: IngestGithubRequest):
+    """
+    Clear everything + re-index a repo from scratch.
+    Use this when switching repos.
+    """
+    # step 1 — clear Neo4j
+    clear_graph()
+
+    # step 2 — clear Qdrant collection
+    client = get_qdrant()
+    try:
+        client.delete_collection(COLLECTION_NAME)
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=384, distance=Distance.COSINE),
+        )
+    except Exception as e:
+        print(f"Qdrant reset: {e}")
+
+    # step 3 — clone + parse
+    with tempfile.TemporaryDirectory() as tmp:
+        clone = subprocess.run(
+            ["git", "clone", "--depth=1", req.github_url, tmp],
+            capture_output=True, timeout=60,
+        )
+        if clone.returncode != 0:
+            raise HTTPException(status_code=400, detail="Clone failed.")
+
+        parse_results = await walk_repo(tmp)
+
+        source_map = {}
+        root = Path(tmp)
+        for result in parse_results:
+            full_path = root / result.file_path
+            try:
+                async with aiofiles.open(
+                    full_path, "r", encoding="utf-8", errors="replace"
+                ) as f:
+                    source_map[result.file_path] = await f.read()
+            except Exception:
+                pass
+
+        # step 4 — store graph in Neo4j
+        graph = build_dependency_graph(parse_results, source_map)
+        store_graph(parse_results, graph)
+
+        # step 5 — embed into Qdrant
+        embedded = embed_functions(parse_results)
+        stored   = upsert_functions(embedded)
+
+    return {
+        "status":           "indexed",
+        "repo":             req.github_url,
+        "total_files":      graph.total_files,
+        "total_functions":  graph.total_functions,
+        "total_edges":      graph.total_edges,
+        "vectors_stored":   stored,
     }

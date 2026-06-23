@@ -139,3 +139,12 @@ export function explainStream(
 
   return () => controller.abort();
 }
+
+export async function ingestFull(githubUrl: string) {
+  const res = await fetch(`${DIRECT}/ingest/full`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ github_url: githubUrl }),
+  });
+  return res.json();
+}
