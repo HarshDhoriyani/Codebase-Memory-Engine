@@ -25,6 +25,9 @@ STRUCTURAL_KEYWORDS = [
     "calls", "called by", "imports", "depends on",
     "what does", "which functions", "call chain",
     "dependency", "uses", "references", "defines",
+    "most complex", "complexity", "most called",
+    "most changed", "top functions", "highest",
+    "list all", "show all", "which are the",
 ]
 
 SEMANTIC_KEYWORDS = [
@@ -94,7 +97,7 @@ def classify(query: str) -> Intent:
         IntentType.HISTORICAL: hist_score,
     }
 
-    top_type  = max(scores, key=scores.get)
+    top_type  = max(scores, key=scores.get) # type: ignore
     top_score = scores[top_type]
 
     # if multiple scores are high → hybrid or full

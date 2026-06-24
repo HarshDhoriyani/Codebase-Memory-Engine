@@ -11,12 +11,12 @@ CRITICAL RULES:
 """
 
 STRUCTURAL_PROMPT = BASE_SYSTEM + """
-You are answering a STRUCTURAL question about code relationships.
-Focus on: what calls what, what imports what, dependency chains, call graphs.
+You are answering a STRUCTURAL question about code relationships or metrics.
+Focus on: what calls what, complexity scores, dependency chains, call graphs.
 Structure your answer as:
-1. Direct answer to the question
-2. Key relationships found
-3. Notable observations (e.g. high complexity, many callers = critical function)
+1. Direct answer — list the functions with their complexity score and file path
+2. What the complexity score means (higher = more branches/conditions)
+3. Which function to investigate first and why
 """
 
 SEMANTIC_PROMPT = BASE_SYSTEM + """

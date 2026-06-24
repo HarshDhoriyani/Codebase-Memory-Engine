@@ -33,9 +33,25 @@ def plan(intent: Intent) -> QueryPlan:
 
     if intent.type == IntentType.STRUCTURAL:
         p.use_graph = True
-        if intent.function_name:
+        q = intent.raw_query.lower()
+
+        # complexity question → direct Neo4j query
+        if any(kw in q for kw in ["complex", "complexity", "most complex"]):
+            p.graph_queries = ["most_complex"]
+
+        # most called question
+        elif any(kw in q for kw in ["most called", "called most", "popular"]):
+            p.graph_queries = ["most_called"]
+
+        # most changed question
+        elif any(kw in q for kw in ["most changed", "changed most", "modified"]):
+            p.graph_queries = ["most_changed"]
+
+        # specific function question
+        elif intent.function_name:
             p.graph_queries = ["calls", "called_by", "complexity"]
             p.graph_params  = {"name": intent.function_name}
+
         else:
             p.graph_queries = ["most_complex", "most_called"]
 
