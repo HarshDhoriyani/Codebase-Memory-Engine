@@ -40,6 +40,13 @@ from ..explainer.explainer import (
     get_explanation,
     is_available,
 )
+from ..storage.repo_store import (
+    save_repo, save_file_hashes,
+    get_repo, get_file_hashes,
+    list_repos, delete_repo,
+)
+from ..sync.differ import compute_file_hashes, find_changed_files
+from ..sync.incremental import reindex_changed_files
 
 router = APIRouter()
 
@@ -481,4 +488,155 @@ async def ingest_full(req: IngestGithubRequest):
         "total_functions":  graph.total_functions,
         "total_edges":      graph.total_edges,
         "vectors_stored":   stored,
+    }
+
+# ── week 9 endpoints ──────────────────────────────────────
+
+@router.get("/repos")
+async def get_indexed_repos():
+    """List all previously indexed repos with metadata."""
+    return {"repos": list_repos()}
+
+
+@router.delete("/repos")
+async def remove_repo(github_url: str):
+    """Remove a repo from tracking."""
+    delete_repo(github_url)
+    return {"status": "removed", "github_url": github_url}
+
+
+@router.post("/repos/sync")
+async def sync_repo(req: IngestGithubRequest):
+    """
+    Smart sync — only re-index files that changed since last index.
+    If the repo hasn't been indexed before, does a full index.
+
+    This is the production-ready alternative to /ingest/full.
+    A 1-file change takes seconds instead of minutes.
+    """
+    existing = get_repo(req.github_url)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        clone = subprocess.run(
+            ["git", "clone", "--depth=1", req.github_url, tmp],
+            capture_output=True, timeout=60,
+        )
+        if clone.returncode != 0:
+            raise HTTPException(status_code=400, detail="Clone failed.")
+
+        # get latest commit hash
+        commit_result = subprocess.run(
+            ["git", "-C", tmp, "rev-parse", "HEAD"],
+            capture_output=True, text=True,
+        )
+        latest_commit = commit_result.stdout.strip()
+
+        # if already indexed with same commit — nothing to do
+        if existing and existing.get("last_commit") == latest_commit:
+            return {
+                "status":  "up_to_date",
+                "repo":    req.github_url,
+                "message": "Already up to date — no changes detected",
+            }
+
+        parse_results = await walk_repo(tmp)
+        new_hashes    = compute_file_hashes(tmp, parse_results)
+
+        # first time indexing → full index
+        if not existing:
+            source_map = {}
+            root = Path(tmp)
+            for result in parse_results:
+                full_path = root / result.file_path
+                try:
+                    async with aiofiles.open(
+                        full_path, "r", encoding="utf-8", errors="replace"
+                    ) as f:
+                        source_map[result.file_path] = await f.read()
+                except Exception:
+                    pass
+
+            graph    = build_dependency_graph(parse_results, source_map)
+            store_graph(parse_results, graph)
+            embedded = embed_functions(parse_results)
+            upsert_functions(embedded)
+
+            repo_id = save_repo(
+                github_url=req.github_url,
+                last_commit=latest_commit,
+                total_files=graph.total_files,
+                total_functions=graph.total_functions,
+                total_edges=graph.total_edges,
+            )
+            save_file_hashes(repo_id, new_hashes)
+
+            return {
+                "status":          "indexed",
+                "repo":            req.github_url,
+                "total_files":     graph.total_files,
+                "total_functions": graph.total_functions,
+                "total_edges":     graph.total_edges,
+            }
+
+        # incremental update → only changed files
+        old_hashes               = get_file_hashes(existing["id"])
+        changed_files, deleted   = find_changed_files(old_hashes, new_hashes)
+
+        if not changed_files and not deleted:
+            return {
+                "status":  "up_to_date",
+                "repo":    req.github_url,
+                "message": "No file changes detected",
+            }
+
+        sync_result = await reindex_changed_files(tmp, changed_files, deleted)
+
+        # update metadata
+        save_repo(
+            github_url=req.github_url,
+            last_commit=latest_commit,
+            total_files=len(parse_results),
+            total_functions=sum(len(r.functions) for r in parse_results),
+            total_edges=existing.get("total_edges", 0),
+        )
+        save_file_hashes(existing["id"], {**old_hashes, **new_hashes})
+
+        return {
+            "status":        "synced",
+            "repo":          req.github_url,
+            "files_changed": len(changed_files),
+            "files_deleted": len(deleted),
+            **sync_result,
+        }
+
+
+@router.get("/repos/status")
+async def repo_status(github_url: str):
+    """Check if a repo is indexed and how fresh the data is."""
+    repo = get_repo(github_url)
+    if not repo:
+        return {"status": "not_indexed", "github_url": github_url}
+
+    from datetime import datetime, timezone
+    indexed_at = repo["indexed_at"]
+    if isinstance(indexed_at, str):
+        indexed_at = datetime.fromisoformat(indexed_at)
+
+    now      = datetime.now(timezone.utc)
+    if indexed_at.tzinfo is None:
+        indexed_at = indexed_at.replace(tzinfo=timezone.utc)
+
+    age_hours = (now - indexed_at).total_seconds() / 3600
+    stale     = age_hours > 24
+
+    return {
+        "status":          "indexed",
+        "github_url":      github_url,
+        "repo_name":       repo["repo_name"],
+        "last_commit":     repo["last_commit"],
+        "indexed_at":      str(repo["indexed_at"]),
+        "age_hours":       round(age_hours, 1),
+        "stale":           stale,
+        "total_files":     repo["total_files"],
+        "total_functions": repo["total_functions"],
     }

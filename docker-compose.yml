@@ -10,17 +10,24 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
-  frontend:
-    image: node:20-alpine
-    working_dir: /app
-    volumes:
-      - ./frontend:/app
+  postgres:
+    image: postgres:16-alpine
     ports:
-      - "3000:3000"
-    command: sh -c "npm install && npm run dev"
+      - "5432:5432"
     environment:
-      - NODE_ENV=development
+      POSTGRES_USER:     cme
+      POSTGRES_PASSWORD: cme123
+      POSTGRES_DB:       cme
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cme"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   neo4j:
     image: neo4j:5
@@ -50,7 +57,19 @@ services:
     ports:
       - "6379:6379"
 
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "3000:3000"
+    command: sh -c "npm install && npm run dev"
+    environment:
+      - NODE_ENV=development
+
 volumes:
   neo4j_data:
   qdrant_data:
+  postgres_data:
   model_cache:
